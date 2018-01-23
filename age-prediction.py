@@ -187,19 +187,49 @@ def CleverPrediction():
         print_resource_usage(start)
 
 
+def CleverPredict():
+    start = timeit.default_timer()
+    with open(os.path.join(results_path, "prediction_filtered.csv"), 'w') as output:
+        writer = csv.writer(output, delimiter=',')
+        for user in test_users:
+            ptr = test_graph_csr.indptr[user - 1]
+            ptr_next = test_graph_csr.indptr[user]
+
+            common_age = []
+            spec_age = []
+            for i in range(ptr, ptr_next):
+                friend_id = test_graph_csr.indices[i]
+                mask = test_graph_csr.data[i]
+                age = birth_dates[friend_id]
+
+                # magic number TODO
+                if mask & (-1099528):
+                    continue
+                else:
+                    if mask == 1:
+                        common_age.append(age)
+                    else:
+                        spec_age.append(age)
+
+            common_date = statistics.mean(common_age)
+
+            date = 0
+            if spec_age.__len__() > 0:
+                spec_date = statistics.mean(spec_age)
+                date = (common_date + spec_date) / 2
+            else:
+                date = common_date
+            writer.writerow([user, date])
+        print_resource_usage(start)
+
 # Pre-calculated values
 max_user_id = 47289241
 links_count = 27261623
-# To recalculate:
-# max_user_id, links_count = calculate_max_user_id()
- 
+
 test_users = load_test_users()
- 
-# Load transformed data
-# To extract from text data:
-# extract_and_save_data()
+
 test_graph_csr = load_csr("prediction/test_graph")
 birth_dates = np.load(f"{birth_dates_path}.npy")
-CleverPrediction()
+CleverPredict()
 print("All done.")
 print_resource_usage(global_start)
