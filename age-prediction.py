@@ -2,11 +2,10 @@ import csv
 import os
 import timeit
 import numpy as np
-import scipy
 import statistics
 from scipy.sparse import coo_matrix, csr_matrix
- 
- # Configuration
+
+# Configuration
 data_path = "data/"
 graph_path = os.path.join(data_path, "graph")
 demography_path = os.path.join(data_path, "trainDemography")
@@ -14,15 +13,14 @@ test_users_path = os.path.join(data_path, "users")
 results_path = "prediction/"
 birth_dates_path = os.path.join(results_path, "birth_dates")
 test_graph_path = os.path.join(results_path, "test_graph")
- 
+
 global_start = timeit.default_timer()
- 
- 
-# region Helpers
- 
+
+
 def print_resource_usage(start_time):
-   # print(f"Time elapsed: {timeit.default_timer() - start_time} sec.")
-    #print(f"Memory usage: {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024 * 1024)} MB")
+    # print(f"Time elapsed: {timeit.default_timer() - start_time} sec.")
+    # print(f"Memory usage: {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024 * 1024)} MB")
+    # uncomment if use linux
     print("resources")
 
 
@@ -47,27 +45,23 @@ def calculate_max_user_id():
     print_resource_usage(local_start)
     return max(max_left, max_right), link_count
 
- 
+
 def save_csr(matrix, path):
     np.savez(path, data=matrix.data, indices=matrix.indices, indptr=matrix.indptr, shape=matrix.shape)
 
- 
+
 def load_csr(path):
     loaded = np.load(f"{path}.npz")
     return csr_matrix((loaded['data'], loaded['indices'], loaded['indptr']), shape=loaded['shape'])
- 
- 
-# endregion
- 
-# region ETL
- 
+
+
 def load_test_users():
-   test_users = set()
-   for line in csv.reader(open(test_users_path)):
+    test_users = set()
+    for line in csv.reader(open(test_users_path)):
         test_users.add(int(line[0]))
-   return test_users
- 
- 
+    return test_users
+
+
 def load_birth_dates():
     local_start = timeit.default_timer()
     birth_dates = np.zeros(max_user_id, dtype=np.int32)
@@ -80,8 +74,8 @@ def load_birth_dates():
     print("Loaded birth dates.")
     print_resource_usage(local_start)
     return birth_dates
- 
- 
+
+
 def load_test_graph():
     local_start = timeit.default_timer()
     user_from = np.zeros(links_count, dtype=np.int32)
@@ -112,8 +106,8 @@ def load_test_graph():
     print("Converted graph to CSR.")
     print_resource_usage(local_start)
     return graph
- 
- 
+
+
 def extract_and_save_data():
     birth_dates = load_birth_dates()
     np.save(birth_dates_path, birth_dates)
@@ -130,97 +124,71 @@ def MedianPredict():
     with open(os.path.join(results_path, "prediction_direct_strange.csv"), 'w') as output:
         writer = csv.writer(output, delimiter=',')
         for user in test_users:
-
             ptr = test_graph_csr.indptr[user - 1]
             ptr_next = test_graph_csr.indptr[user]
             friends_id_iter = map(lambda x: birth_dates[x], test_graph_csr.indices[ptr:ptr_next])
 
             median_date = statistics.median(np.fromiter(friends_id_iter, dtype=np.int))
-            #average_date = sum(friends_id_iter) / (ptr_next - ptr)
-            #date = (median_date + average_date) / 2
+            # average_date = sum(friends_id_iter) / (ptr_next - ptr)
+            # date = (median_date + average_date) / 2
 
             writer.writerow([user, median_date])
         print_resource_usage(start)
 
 
-# endregion
-def StrangePredict():
+def predict():
     start = timeit.default_timer()
-    with open(os.path.join(results_path, "prediction_direct_strange.csv"), 'w') as output:
+    with open(os.path.join(results_path, "prediction_filtered2.csv"), 'w') as output:
         writer = csv.writer(output, delimiter=',')
         for user in test_users:
             ptr = test_graph_csr.indptr[user - 1]
             ptr_next = test_graph_csr.indptr[user]
-            friends_dates = np.fromiter(map(lambda x: birth_dates[x], test_graph_csr.indices[ptr:ptr_next]), dtype=np.int)
 
+            friends_dates = np.fromiter(map(lambda x: birth_dates[x], test_graph_csr.indices[ptr:ptr_next]),
+                                        dtype=np.int)
             median_date = statistics.median(friends_dates)
-            average_date = friends_dates.mean()
-            date = (median_date + average_date) / 2
+            mean_date = statistics.mean(friends_dates)
 
-            writer.writerow([user, date])
-        print_resource_usage(start)
+            filtered_age_list = []
+            schoolmates_age_list = []
+            college_age_list = []
+            army_age_list = []
 
-
-def CleverPrediction():
-    start = timeit.default_timer()
-    with open(os.path.join(results_path, "prediction_direct_clever2.csv"), 'w') as output:
-        writer = csv.writer(output, delimiter=',')
-        for user in test_users:
-            ptr = test_graph_csr.indptr[user - 1]
-            ptr_next = test_graph_csr.indptr[user]
-
-            classmates_ida = list(filter((lambda x:  (test_graph_csr.data[x] & ((1 << 15) | (1 << 10) | (1 << 9))) > 2), range(ptr, ptr_next)))
-            if(classmates_ida.__len__()) > 0:
-                friends_dates_iter = map(lambda x: birth_dates[x], test_graph_csr.indices[classmates_ida])
-                friends_dates = np.fromiter(friends_dates_iter, dtype=np.int)
-                writer.writerow([user, friends_dates.mean()])
-
-            else:
-                friends_dates = np.fromiter(map(lambda x: birth_dates[x], test_graph_csr.indices[ptr:ptr_next]),
-                                            dtype=np.int)
-
-                median_date = statistics.median(friends_dates)
-                average_date = friends_dates.mean()
-                date = (median_date + average_date) / 2
-
-                writer.writerow([user, date])
-        print_resource_usage(start)
-
-
-def CleverPredict():
-    start = timeit.default_timer()
-    with open(os.path.join(results_path, "prediction_filtered.csv"), 'w') as output:
-        writer = csv.writer(output, delimiter=',')
-        for user in test_users:
-            ptr = test_graph_csr.indptr[user - 1]
-            ptr_next = test_graph_csr.indptr[user]
-
-            common_age = []
-            spec_age = []
             for i in range(ptr, ptr_next):
                 friend_id = test_graph_csr.indices[i]
                 mask = test_graph_csr.data[i]
                 age = birth_dates[friend_id]
 
-                # magic number TODO
-                if mask & (-1099528):
-                    continue
-                else:
-                    if mask == 1:
-                        common_age.append(age)
-                    else:
-                        spec_age.append(age)
+                # magic number TODO pre-filter data
+                if ~(mask & (-1099528)):
+                    filtered_age_list.append(age)
 
-            common_date = statistics.mean(common_age)
+                    if mask & (1 << 10):
+                            schoolmates_age_list.append(age)
+                    if mask & (1 << 14):
+                            college_age_list.append(age)
+                    if mask & (1 << 15):
+                            army_age_list.append(age)
+            dates = []
 
-            date = 0
-            if spec_age.__len__() > 0:
-                spec_date = statistics.mean(spec_age)
-                date = (common_date + spec_date) / 2
-            else:
-                date = common_date
+            # TODO understand why median doesn't work
+            if filtered_age_list.__len__() > 0:
+                dates.append(float(statistics.mean(filtered_age_list)))
+
+            if college_age_list.__len__() > 0:
+                college_age = statistics.mean(college_age_list)
+                dates.append(float(college_age))
+
+            if schoolmates_age_list.__len__() > 0:
+                schoolmates_date = statistics.mean(schoolmates_age_list)
+                dates.append(float(schoolmates_date))
+
+            dates.append((median_date + mean_date) / 2)
+            date = statistics.mean(dates)
+
             writer.writerow([user, date])
         print_resource_usage(start)
+
 
 # Pre-calculated values
 max_user_id = 47289241
@@ -230,6 +198,6 @@ test_users = load_test_users()
 
 test_graph_csr = load_csr("prediction/test_graph")
 birth_dates = np.load(f"{birth_dates_path}.npy")
-CleverPredict()
+predict()
 print("All done.")
 print_resource_usage(global_start)
